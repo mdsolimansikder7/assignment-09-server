@@ -36,7 +36,7 @@ server/
 │   ├── jobs/          # cron jobs
 │   ├── utils/
 │   ├── app.js         # express app (no listen)
-│   └── server.js      # listen + db connect
+│   └── index.js       # listen + db connect
 ├── .env               # never commit
 ├── .env.example
 ├── .gitignore
