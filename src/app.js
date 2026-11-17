@@ -2,6 +2,8 @@ import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import { env } from "./config/env.js";
+import { authRouter } from "./routes/auth.js";
+import { usersRouter } from "./routes/users.js";
 import { notFound } from "./middlewares/notFound.js";
 import { errorHandler } from "./middlewares/errorHandler.js";
 
@@ -38,6 +40,9 @@ app.get("/", (req, res) => {
     message: "Equipment Rental API is running",
   });
 });
+
+app.use("/api/auth", authRouter);
+app.use("/api/users", usersRouter);
 
 app.use(notFound);
 app.use(errorHandler);
