@@ -23,9 +23,23 @@ async function start() {
     console.error(`[db] MongoDB connection failed: ${error.message}`);
   }
 
-  app.listen(env.port, () => {
+  const server = app.listen(env.port, () => {
     console.log(`[server] API listening on port ${env.port} (${env.nodeEnv})`);
   });
+
+  server.on("error", (error) => {
+    console.error(`[server] Failed to listen on port ${env.port}: ${error.message}`);
+  });
 }
+
+// A stray rejection should never take the API down; log it instead.
+process.on("unhandledRejection", (reason) => {
+  const message = reason instanceof Error ? reason.message : String(reason);
+  console.error(`[process] Unhandled rejection: ${message}`);
+});
+
+process.on("uncaughtException", (error) => {
+  console.error(`[process] Uncaught exception: ${error.message}`);
+});
 
 start();

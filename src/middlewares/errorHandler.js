@@ -1,28 +1,45 @@
 import { env } from "../config/env.js";
 
 /**
+ * Maps known error types to HTTP status codes so clients never receive
+ * an unexpected 500 for a predictable failure.
+ */
+function resolveStatus(error) {
+  if (error.type === "entity.parse.failed") return 400;
+  if (error.type === "entity.too.large") return 413;
+  if (error.code === 11000) return 409;
+
+  const status = error.status || error.statusCode || 500;
+  if (status >= 500 && error.type === "StripeInvalidRequestError") return 502;
+
+  return status;
+}
+
+function resolveMessage(error, status) {
+  if (error.type === "entity.parse.failed") return "Invalid JSON body";
+  if (error.type === "entity.too.large") return "Request body is too large";
+  if (error.code === 11000) return "Resource already exists";
+
+  // Never leak internal error details in production.
+  if (status >= 500 && env.isProduction) {
+    return "Internal server error";
+  }
+
+  return error.message || "Internal server error";
+}
+
+/**
  * Central error handler. Keeps responses consistent and never leaks
- * stack traces or internal details when running in production.
+ * stack traces in production.
  */
 // eslint-disable-next-line no-unused-vars
 export function errorHandler(error, req, res, next) {
-  const status = error.status || error.statusCode || 500;
-  const isServerError = status >= 500;
+  const status = resolveStatus(error);
+  const message = resolveMessage(error, status);
 
-  // Malformed JSON bodies are client errors, not server errors.
-  const resolvedStatus = error.type === "entity.parse.failed" ? 400 : status;
-  const message =
-    resolvedStatus >= 500 && env.isProduction
-      ? "Internal server error"
-      : error.type === "entity.parse.failed"
-        ? "Invalid JSON body"
-        : error.message || "Internal server error";
+  // Stack traces only in development; secrets are never logged.
+  const detail = status >= 500 && !env.isProduction && error.stack ? `: ${error.stack}` : "";
+  console.error(`[error] ${req.method} ${req.originalUrl} -> ${status}${detail}`);
 
-  console.error(
-    `[error] ${req.method} ${req.originalUrl} -> ${resolvedStatus}${
-      isServerError && !env.isProduction ? `: ${error.stack}` : ""
-    }`,
-  );
-
-  res.status(resolvedStatus).json({ success: false, message });
+  res.status(status).json({ success: false, message });
 }

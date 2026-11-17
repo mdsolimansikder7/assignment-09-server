@@ -2,10 +2,14 @@ import { getDb } from "../config/db.js";
 import { env } from "../config/env.js";
 import { getStripe } from "../config/stripe.js";
 import { toObjectId } from "../utils/objectId.js";
+import { parseOrThrow } from "../utils/validate.js";
 import { serializeBooking } from "../utils/serialize.js";
+import { z } from "zod";
 
 const BOOKINGS_COLLECTION = "bookings";
 const PAYMENTS_COLLECTION = "payments";
+
+const sessionIdSchema = z.string().trim().min(1).max(255);
 
 /**
  * Marks a booking paid and stores the payment exactly once.
@@ -133,11 +137,7 @@ async function retrieveSession(stripe, sessionId) {
  * Stripe directly when the webhook has not arrived yet.
  */
 export async function verifyPayment(req, res) {
-  const { sessionId } = req.params;
-
-  if (!sessionId || typeof sessionId !== "string") {
-    return res.status(400).json({ success: false, message: "Invalid session id" });
-  }
+  const sessionId = parseOrThrow(sessionIdSchema, req.params.sessionId);
 
   const db = await getDb();
   let booking = await db.collection(BOOKINGS_COLLECTION).findOne({ stripeSessionId: sessionId });
