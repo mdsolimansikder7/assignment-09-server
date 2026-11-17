@@ -62,3 +62,35 @@ export function serializeFavorite(favorite) {
     createdAt: favorite.createdAt,
   };
 }
+
+/**
+ * Shapes a raw MongoDB booking document for API responses.
+ */
+export function serializeBooking(booking) {
+  if (!booking) return null;
+
+  const customer = booking.customer || {};
+
+  return {
+    id: booking._id.toString(),
+    equipmentId: booking.equipmentId.toString(),
+    equipmentName: booking.equipmentName,
+    customer: {
+      name: customer.name || "",
+      email: customer.email || "",
+      phone: customer.phone || "",
+    },
+    ownerEmail: booking.ownerEmail,
+    startDate: booking.startDate,
+    endDate: booking.endDate,
+    quantity: booking.quantity,
+    totalAmount: booking.totalAmount,
+    deliveryAddress: booking.deliveryAddress,
+    notes: booking.notes || "",
+    paymentStatus: booking.paymentStatus,
+    bookingStatus: booking.bookingStatus,
+    stripeSessionId: booking.stripeSessionId || null,
+    createdAt: booking.createdAt,
+    updatedAt: booking.updatedAt,
+  };
+}

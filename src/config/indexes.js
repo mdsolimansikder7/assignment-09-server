@@ -13,4 +13,7 @@ export async function ensureIndexes(db) {
     { userEmail: 1, equipmentId: 1 },
     { unique: true },
   );
+
+  await db.collection("bookings").createIndex({ "customer.email": 1 });
+  await db.collection("bookings").createIndex({ ownerEmail: 1 });
 }

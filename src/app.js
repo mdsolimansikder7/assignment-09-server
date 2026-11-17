@@ -6,6 +6,7 @@ import { authRouter } from "./routes/auth.js";
 import { usersRouter } from "./routes/users.js";
 import { equipmentRouter } from "./routes/equipment.js";
 import { favoritesRouter } from "./routes/favorites.js";
+import { bookingsRouter } from "./routes/bookings.js";
 import { adminRouter } from "./routes/admin.js";
 import { notFound } from "./middlewares/notFound.js";
 import { errorHandler } from "./middlewares/errorHandler.js";
@@ -48,6 +49,7 @@ app.use("/api/auth", authRouter);
 app.use("/api/users", usersRouter);
 app.use("/api/equipment", equipmentRouter);
 app.use("/api/favorites", favoritesRouter);
+app.use("/api/bookings", bookingsRouter);
 app.use("/api/admin", adminRouter);
 
 app.use(notFound);
