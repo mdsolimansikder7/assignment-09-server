@@ -21,5 +21,4 @@ export function startJobs() {
       console.error(`[jobs] update-bookings failed: ${error.message}`);
     }
   });
-  console.log("[jobs] Daily update-bookings cron scheduled");
 }

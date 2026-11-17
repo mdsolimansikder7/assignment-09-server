@@ -16,7 +16,6 @@ async function start() {
 
     try {
       await ensureIndexes(db);
-      console.log("[db] Indexes ready");
     } catch (error) {
       console.error(`[db] Index creation failed: ${error.message}`);
     }

@@ -1,6 +1,6 @@
 import dotenv from "dotenv";
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 const nodeEnv = process.env.NODE_ENV || "development";
 const clientUrl = (process.env.CLIENT_URL || "http://localhost:3000").replace(/\/+$/, "");

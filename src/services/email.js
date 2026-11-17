@@ -2,14 +2,10 @@ import nodemailer from "nodemailer";
 import { env } from "../config/env.js";
 
 let transporter = null;
-let warned = false;
 
 function getTransporter() {
   if (!env.emailUser || !env.emailPass) {
-    if (!warned) {
-      warned = true;
-      console.warn("[email] EMAIL_USER/EMAIL_PASS not set, notifications are disabled");
-    }
+    // Notifications are optional: skip silently when credentials are absent.
     return null;
   }
 
@@ -56,9 +52,17 @@ export async function sendRentalCompletedEmails(booking) {
     },
   ];
 
-  await Promise.allSettled(
+  const results = await Promise.allSettled(
     messages
       .filter((message) => Boolean(message.to))
       .map((message) => mailer.sendMail({ from: env.emailUser, ...message })),
   );
+
+  // Notification failures are logged but never propagated to the caller.
+  results.forEach((result) => {
+    if (result.status === "rejected") {
+      const reason = result.reason instanceof Error ? result.reason.message : String(result.reason);
+      console.error(`[email] Failed to send notification: ${reason}`);
+    }
+  });
 }
