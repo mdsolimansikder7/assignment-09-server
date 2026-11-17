@@ -16,3 +16,36 @@ export function serializeUser(user) {
     updatedAt: user.updatedAt,
   };
 }
+
+/**
+ * Shapes a raw MongoDB equipment document for API responses.
+ */
+export function serializeEquipment(item) {
+  if (!item) return null;
+
+  const owner = item.owner || {};
+
+  return {
+    id: item._id.toString(),
+    name: item.name,
+    description: item.description,
+    category: item.category,
+    location: item.location,
+    rentalPrice: item.rentalPrice,
+    rentalType: item.rentalType,
+    availableQuantity: item.availableQuantity,
+    condition: item.condition || "",
+    brand: item.brand || "",
+    model: item.model || "",
+    image: item.image || "",
+    terms: item.terms || "",
+    status: item.status,
+    owner: {
+      name: owner.name || "",
+      email: owner.email || "",
+      photo: owner.photo || "",
+    },
+    createdAt: item.createdAt,
+    updatedAt: item.updatedAt,
+  };
+}

@@ -19,3 +19,19 @@ function requireRole(role) {
 export const verifyCustomer = requireRole("customer");
 export const verifyOwner = requireRole("owner");
 export const verifyAdmin = requireRole("admin");
+
+// For routes where either an owner (own resources) or an admin may act.
+export function verifyOwnerOrAdmin(req, res, next) {
+  if (!req.user) {
+    return res.status(401).json({ success: false, message: "Authentication required" });
+  }
+
+  if (req.user.role !== "owner" && req.user.role !== "admin") {
+    return res.status(403).json({
+      success: false,
+      message: "Access denied: owner or admin role required",
+    });
+  }
+
+  return next();
+}
