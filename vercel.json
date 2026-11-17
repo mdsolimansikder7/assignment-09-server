@@ -1,0 +1,7 @@
+{
+  "version": 2,
+  "rewrites": [
+    { "source": "/api/payments/webhook", "destination": "/api/webhook" },
+    { "source": "/(.*)", "destination": "/api" }
+  ]
+}

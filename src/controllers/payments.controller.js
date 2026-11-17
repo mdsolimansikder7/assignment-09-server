@@ -85,26 +85,27 @@ async function completePayment(session) {
 }
 
 /**
- * Stripe webhook. Must receive the raw body (registered before express.json).
+ * Verifies a Stripe event payload and processes it. Shared by the Express
+ * route (local / persistent hosts) and the Vercel Web API function.
+ * Returns a status + JSON body instead of touching req/res directly.
  */
-export async function stripeWebhook(req, res) {
+export async function verifyAndProcessStripeEvent(rawBody, signature) {
   if (!env.stripeWebhookSecret) {
-    return res.status(503).json({ success: false, message: "Stripe webhook is not configured" });
+    return { status: 503, body: { success: false, message: "Stripe webhook is not configured" } };
   }
 
-  const signature = req.headers["stripe-signature"];
   if (!signature) {
-    return res.status(400).json({ success: false, message: "Missing Stripe signature" });
+    return { status: 400, body: { success: false, message: "Missing Stripe signature" } };
   }
 
   const stripe = getStripe();
   let event;
 
   try {
-    event = stripe.webhooks.constructEvent(req.body, signature, env.stripeWebhookSecret);
+    event = stripe.webhooks.constructEvent(rawBody, signature, env.stripeWebhookSecret);
   } catch {
     // Never log the payload: it may contain customer data.
-    return res.status(400).json({ success: false, message: "Invalid webhook signature" });
+    return { status: 400, body: { success: false, message: "Invalid webhook signature" } };
   }
 
   if (event.type === "checkout.session.completed") {
@@ -112,8 +113,22 @@ export async function stripeWebhook(req, res) {
   }
 
   // Always acknowledge verified events so Stripe stops retrying.
-  return res.status(200).json({ received: true });
+  return { status: 200, body: { received: true } };
 }
+
+/**
+ * Stripe webhook (Express). Must receive the raw body (registered before
+ * express.json).
+ */
+export async function stripeWebhook(req, res) {
+  const result = await verifyAndProcessStripeEvent(
+    req.body,
+    req.headers["stripe-signature"],
+  );
+
+  res.status(result.status).json(result.body);
+}
+
 
 /**
  * Retrieves a Checkout session, mapping Stripe's "no such session"
