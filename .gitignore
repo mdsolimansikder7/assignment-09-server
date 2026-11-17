@@ -1,0 +1,28 @@
+# dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# environment (never commit secrets)
+.env
+.env.local
+.env.*.local
+
+# logs
+logs/
+*.log
+npm-debug.log*
+
+# coverage / build output
+coverage/
+dist/
+build/
+
+# editor / OS files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# vercel
+.vercel
