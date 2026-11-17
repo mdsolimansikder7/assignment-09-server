@@ -16,4 +16,7 @@ export async function ensureIndexes(db) {
 
   await db.collection("bookings").createIndex({ "customer.email": 1 });
   await db.collection("bookings").createIndex({ ownerEmail: 1 });
+
+  await db.collection("payments").createIndex({ stripeSessionId: 1 }, { unique: true });
+  await db.collection("payments").createIndex({ ownerEmail: 1 });
 }

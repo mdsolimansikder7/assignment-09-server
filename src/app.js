@@ -7,7 +7,10 @@ import { usersRouter } from "./routes/users.js";
 import { equipmentRouter } from "./routes/equipment.js";
 import { favoritesRouter } from "./routes/favorites.js";
 import { bookingsRouter } from "./routes/bookings.js";
+import { paymentsRouter } from "./routes/payments.js";
 import { adminRouter } from "./routes/admin.js";
+import { stripeWebhook } from "./controllers/payments.controller.js";
+import { asyncHandler } from "./utils/asyncHandler.js";
 import { notFound } from "./middlewares/notFound.js";
 import { errorHandler } from "./middlewares/errorHandler.js";
 
@@ -33,8 +36,14 @@ const corsOptions = {
 app.options(/.*/, cors(corsOptions));
 app.use(cors(corsOptions));
 
-// NOTE: the Stripe webhook route is mounted before express.json() in a later
-// phase because it must receive the raw request body.
+// NOTE: the Stripe webhook must receive the raw body, so it is mounted
+// before express.json(). Do not move this block below the JSON parser.
+app.post(
+  "/api/payments/webhook",
+  express.raw({ type: "application/json" }),
+  asyncHandler(stripeWebhook),
+);
+
 app.use(express.json({ limit: "1mb" }));
 app.use(cookieParser());
 
@@ -50,6 +59,7 @@ app.use("/api/users", usersRouter);
 app.use("/api/equipment", equipmentRouter);
 app.use("/api/favorites", favoritesRouter);
 app.use("/api/bookings", bookingsRouter);
+app.use("/api/payments", paymentsRouter);
 app.use("/api/admin", adminRouter);
 
 app.use(notFound);
