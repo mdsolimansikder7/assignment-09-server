@@ -8,4 +8,9 @@ export async function ensureIndexes(db) {
   await db.collection("equipment").createIndex({ status: 1 });
   await db.collection("equipment").createIndex({ category: 1 });
   await db.collection("equipment").createIndex({ "owner.email": 1 });
+
+  await db.collection("favorites").createIndex(
+    { userEmail: 1, equipmentId: 1 },
+    { unique: true },
+  );
 }

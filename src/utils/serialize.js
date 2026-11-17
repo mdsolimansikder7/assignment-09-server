@@ -49,3 +49,16 @@ export function serializeEquipment(item) {
     updatedAt: item.updatedAt,
   };
 }
+
+/**
+ * Shapes a raw MongoDB favorite document for API responses.
+ */
+export function serializeFavorite(favorite) {
+  if (!favorite) return null;
+
+  return {
+    id: favorite._id.toString(),
+    equipmentId: favorite.equipmentId.toString(),
+    createdAt: favorite.createdAt,
+  };
+}
