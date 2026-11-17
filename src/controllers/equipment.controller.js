@@ -3,6 +3,7 @@ import { getDb } from "../config/db.js";
 import { toObjectId } from "../utils/objectId.js";
 import { parseOrThrow } from "../utils/validate.js";
 import { serializeEquipment } from "../utils/serialize.js";
+import { escapeRegex } from "../utils/regex.js";
 
 const EQUIPMENT_COLLECTION = "equipment";
 
@@ -23,6 +24,69 @@ const equipmentSchema = z.object({
 });
 
 const equipmentUpdateSchema = equipmentSchema.partial();
+
+// Query params for the public listing. All filtering happens in MongoDB.
+const listQuerySchema = z
+  .object({
+    search: z.string().trim().max(100).optional(),
+    category: z.string().trim().max(60).optional(),
+    rentalType: z.enum(["daily", "weekly", "monthly"]).optional(),
+    minPrice: z.coerce.number().min(0).optional(),
+    maxPrice: z.coerce.number().min(0).optional(),
+    availability: z.enum(["available"]).optional(),
+    sort: z.enum(["price_asc", "price_desc", "newest"]).optional(),
+    page: z.coerce.number().int().min(1).default(1),
+    limit: z.coerce.number().int().min(1).max(50).default(9),
+  })
+  .refine(
+    (query) =>
+      query.minPrice === undefined ||
+      query.maxPrice === undefined ||
+      query.minPrice <= query.maxPrice,
+    { message: "minPrice cannot be greater than maxPrice", path: ["minPrice"] },
+  );
+
+const SORT_OPTIONS = {
+  price_asc: { rentalPrice: 1 },
+  price_desc: { rentalPrice: -1 },
+  newest: { createdAt: -1 },
+};
+
+// Empty query params ("?category=") are treated as absent.
+function cleanQuery(query) {
+  return Object.fromEntries(
+    Object.entries(query).filter(([, value]) => value !== undefined && value !== null && value !== ""),
+  );
+}
+
+function buildEquipmentFilter(query) {
+  const filter = { status: "approved" };
+
+  if (query.search) {
+    const regex = new RegExp(escapeRegex(query.search), "i");
+    filter.$or = [{ name: regex }, { category: regex }, { location: regex }];
+  }
+
+  if (query.category) {
+    filter.category = new RegExp(`^${escapeRegex(query.category)}$`, "i");
+  }
+
+  if (query.rentalType) {
+    filter.rentalType = query.rentalType;
+  }
+
+  if (query.minPrice !== undefined || query.maxPrice !== undefined) {
+    filter.rentalPrice = {};
+    if (query.minPrice !== undefined) filter.rentalPrice.$gte = query.minPrice;
+    if (query.maxPrice !== undefined) filter.rentalPrice.$lte = query.maxPrice;
+  }
+
+  if (query.availability === "available") {
+    filter.availableQuantity = { $gt: 0 };
+  }
+
+  return filter;
+}
 
 function ownerSnapshot(user) {
   return {
@@ -54,17 +118,18 @@ export async function createEquipment(req, res) {
 }
 
 export async function listEquipment(req, res) {
-  const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
-  const limit = Math.min(50, Math.max(1, Number.parseInt(req.query.limit, 10) || 9));
+  const query = parseOrThrow(listQuerySchema, cleanQuery(req.query ?? {}));
+  const { page, limit } = query;
 
   const db = await getDb();
   const collection = db.collection(EQUIPMENT_COLLECTION);
-  const filter = { status: "approved" };
+  const filter = buildEquipmentFilter(query);
+  const sort = SORT_OPTIONS[query.sort] || SORT_OPTIONS.newest;
 
   const [items, total] = await Promise.all([
     collection
       .find(filter)
-      .sort({ createdAt: -1 })
+      .sort(sort)
       .skip((page - 1) * limit)
       .limit(limit)
       .toArray(),
