@@ -2,6 +2,7 @@ import app from "./app.js";
 import { env, warnMissingEnv } from "./config/env.js";
 import { connectDb } from "./config/db.js";
 import { ensureIndexes } from "./config/indexes.js";
+import { startJobs } from "./jobs/index.js";
 
 async function start() {
   warnMissingEnv();
@@ -26,6 +27,8 @@ async function start() {
   const server = app.listen(env.port, () => {
     console.log(`[server] API listening on port ${env.port} (${env.nodeEnv})`);
   });
+
+  startJobs();
 
   server.on("error", (error) => {
     console.error(`[server] Failed to listen on port ${env.port}: ${error.message}`);
