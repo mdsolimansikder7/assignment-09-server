@@ -5,6 +5,8 @@ import { parseOrThrow } from "../utils/validate.js";
 import { serializeBooking } from "../utils/serialize.js";
 import { getAvailableQuantity } from "../services/availability.js";
 import { calculateTotal, daysBetween } from "../services/pricing.js";
+import { getStripe } from "../config/stripe.js";
+import { env } from "../config/env.js";
 
 const BOOKINGS_COLLECTION = "bookings";
 const EQUIPMENT_COLLECTION = "equipment";
@@ -45,6 +47,9 @@ export async function checkout(req, res) {
   if (data.startDate.getTime() < startOfToday().getTime()) {
     return res.status(400).json({ success: false, message: "startDate cannot be in the past" });
   }
+
+  // Fails with 503 before a booking is created when Stripe is not configured.
+  const stripe = getStripe();
 
   const db = await getDb();
   const equipment = await db
@@ -94,10 +99,52 @@ export async function checkout(req, res) {
   };
 
   const result = await db.collection(BOOKINGS_COLLECTION).insertOne(booking);
+  const bookingId = result.insertedId;
+
+  // Stripe Checkout session. Prices come from the server-computed total.
+  let session;
+  try {
+    session = await stripe.checkout.sessions.create({
+      mode: "payment",
+      customer_email: req.user.email,
+      line_items: [
+        {
+          quantity: 1,
+          price_data: {
+            currency: "usd",
+            unit_amount: Math.round(totalAmount * 100),
+            product_data: {
+              name: `${equipment.name} (${days} day${days === 1 ? "" : "s"}, ${equipment.rentalType})`,
+            },
+          },
+        },
+      ],
+      metadata: {
+        bookingId: bookingId.toString(),
+        equipmentId: equipment._id.toString(),
+      },
+      success_url: `${env.clientUrl}/bookings/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${env.clientUrl}/equipment/${equipment._id.toString()}?payment=cancelled`,
+    });
+  } catch (error) {
+    // Do not leave an orphan pending booking behind.
+    await db.collection(BOOKINGS_COLLECTION).deleteOne({ _id: bookingId });
+    console.error(`[stripe] Checkout session creation failed: ${error.message}`);
+
+    const failure = new Error("Could not initialize payment");
+    failure.status = 502;
+    throw failure;
+  }
+
+  await db
+    .collection(BOOKINGS_COLLECTION)
+    .updateOne({ _id: bookingId }, { $set: { stripeSessionId: session.id, updatedAt: new Date() } });
 
   res.status(201).json({
     success: true,
-    data: serializeBooking({ ...booking, _id: result.insertedId }),
+    data: serializeBooking({ ...booking, _id: bookingId, stripeSessionId: session.id }),
+    url: session.url,
+    sessionId: session.id,
   });
 }
 
