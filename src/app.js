@@ -20,13 +20,15 @@ export const app = express();
 // Required for reverse proxies (Vercel, Render, etc.) so secure cookies
 // and protocol detection work correctly in production.
 app.set("trust proxy", 1);
+app.disable("x-powered-by");
 
 const corsOptions = {
   origin(origin, callback) {
     // Allow same-origin/server-to-server requests (no Origin header).
     if (!origin) return callback(null, true);
-    if (env.allowedOrigins.includes(origin)) return callback(null, true);
-    return callback(new Error("Not allowed by CORS"));
+    // Denied origins get no CORS headers (the browser blocks the response)
+    // instead of an exception that would surface as a 500.
+    return callback(null, env.allowedOrigins.includes(origin));
   },
   credentials: true,
   methods: ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],

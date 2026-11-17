@@ -3,6 +3,16 @@ import dotenv from "dotenv";
 dotenv.config();
 
 const nodeEnv = process.env.NODE_ENV || "development";
+const clientUrl = (process.env.CLIENT_URL || "http://localhost:3000").replace(/\/+$/, "");
+
+const allowedOrigins = [
+  ...new Set([
+    clientUrl,
+    ...(nodeEnv === "production"
+      ? []
+      : ["http://localhost:3000", "http://127.0.0.1:3000"]),
+  ]),
+];
 
 export const env = {
   port: Number(process.env.PORT) || 5000,
@@ -10,7 +20,7 @@ export const env = {
   dbName: process.env.DB_NAME || "",
   jwtSecret: process.env.JWT_SECRET || "",
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || "7d",
-  clientUrl: process.env.CLIENT_URL || "http://localhost:3000",
+  clientUrl,
   stripeSecretKey: process.env.STRIPE_SECRET_KEY || "",
   stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET || "",
   nodeEnv,
@@ -18,12 +28,7 @@ export const env = {
   emailUser: process.env.EMAIL_USER || "",
   emailPass: process.env.EMAIL_PASS || "",
   // Local origins are only trusted outside production.
-  allowedOrigins: [
-    process.env.CLIENT_URL || "http://localhost:3000",
-    ...(nodeEnv === "production"
-      ? []
-      : ["http://localhost:3000", "http://127.0.0.1:3000"]),
-  ],
+  allowedOrigins,
 };
 
 /**
