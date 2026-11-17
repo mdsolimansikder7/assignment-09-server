@@ -4,6 +4,8 @@ import cookieParser from "cookie-parser";
 import { env } from "./config/env.js";
 import { authRouter } from "./routes/auth.js";
 import { usersRouter } from "./routes/users.js";
+import { equipmentRouter } from "./routes/equipment.js";
+import { adminRouter } from "./routes/admin.js";
 import { notFound } from "./middlewares/notFound.js";
 import { errorHandler } from "./middlewares/errorHandler.js";
 
@@ -43,6 +45,8 @@ app.get("/", (req, res) => {
 
 app.use("/api/auth", authRouter);
 app.use("/api/users", usersRouter);
+app.use("/api/equipment", equipmentRouter);
+app.use("/api/admin", adminRouter);
 
 app.use(notFound);
 app.use(errorHandler);
