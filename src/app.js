@@ -8,6 +8,7 @@ import { equipmentRouter } from "./routes/equipment.js";
 import { favoritesRouter } from "./routes/favorites.js";
 import { bookingsRouter } from "./routes/bookings.js";
 import { paymentsRouter } from "./routes/payments.js";
+import { analyticsRouter } from "./routes/analytics.js";
 import { adminRouter } from "./routes/admin.js";
 import { stripeWebhook } from "./controllers/payments.controller.js";
 import { asyncHandler } from "./utils/asyncHandler.js";
@@ -60,6 +61,7 @@ app.use("/api/equipment", equipmentRouter);
 app.use("/api/favorites", favoritesRouter);
 app.use("/api/bookings", bookingsRouter);
 app.use("/api/payments", paymentsRouter);
+app.use("/api/analytics", analyticsRouter);
 app.use("/api/admin", adminRouter);
 
 app.use(notFound);
