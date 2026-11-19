@@ -24,11 +24,6 @@ function periodIndex(period) {
   return period.year * 12 + (period.month - 1);
 }
 
-/**
- * Merges a bookings-by-month pipeline result and a revenue-by-month
- * pipeline result into one chart-ready array:
- * [{ month: "Jan", year: 2026, bookings: 4, revenue: 1200 }]
- */
 function mergeMonthly(bookingRows, paymentRows) {
   const periods = new Map();
 
@@ -64,7 +59,6 @@ function mergeMonthly(bookingRows, paymentRows) {
 }
 
 function monthlyRangeSort() {
-  // Newest 12 months, then flipped to chronological order for charts.
   return [
     { $sort: { "_id.year": -1, "_id.month": -1 } },
     { $limit: CHART_MONTHS },

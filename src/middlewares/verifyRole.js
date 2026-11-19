@@ -15,12 +15,27 @@ function requireRole(role) {
   };
 }
 
-// All three run after verifyToken.
+export function authorizeRoles(...roles) {
+  return function roleGuard(req, res, next) {
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: "Authentication required" });
+    }
+
+    if (!roles.includes(req.user.role)) {
+      return res.status(403).json({
+        success: false,
+        message: `Access denied: ${roles.join(" or ")} role required`,
+      });
+    }
+
+    return next();
+  };
+}
+
 export const verifyCustomer = requireRole("customer");
 export const verifyOwner = requireRole("owner");
 export const verifyAdmin = requireRole("admin");
 
-// For routes where either an owner (own resources) or an admin may act.
 export function verifyOwnerOrAdmin(req, res, next) {
   if (!req.user) {
     return res.status(401).json({ success: false, message: "Authentication required" });

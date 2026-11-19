@@ -6,12 +6,9 @@ import { serializeUser } from "../utils/serialize.js";
 
 const loginSchema = z.object({
   email: z.string().trim().toLowerCase().pipe(z.email()),
+  role: z.unknown().optional(),
 });
 
-/**
- * Builds a human friendly display name from the email local part,
- * e.g. "john.doe@mail.com" -> "John Doe".
- */
 function nameFromEmail(email) {
   const local = email.split("@")[0] || "";
   const words = local.replace(/[._-]+/g, " ").replace(/\s+/g, " ").trim();
@@ -22,10 +19,14 @@ function nameFromEmail(email) {
 }
 
 export async function loginWithJwt(req, res) {
-  const { email } = parseOrThrow(loginSchema, req.body ?? {});
+  const { email, role } = parseOrThrow(loginSchema, req.body ?? {});
   const db = await getDb();
   const users = db.collection("users");
   const now = new Date();
+
+  // Accept "customer" and "owner" ONLY. If missing, invalid, or "admin", default to "customer".
+  const normalizedRole = typeof role === "string" ? role.trim().toLowerCase() : "";
+  const assignedRole = normalizedRole === "owner" ? "owner" : "customer";
 
   const update = {
     $setOnInsert: {
@@ -33,7 +34,7 @@ export async function loginWithJwt(req, res) {
       photo: "",
       phone: "",
       address: "",
-      role: "customer",
+      role: assignedRole,
       createdAt: now,
     },
     $set: { updatedAt: now },
@@ -46,7 +47,6 @@ export async function loginWithJwt(req, res) {
       returnDocument: "after",
     });
   } catch (error) {
-    // Two simultaneous first-time logins can race on the unique email index.
     if (error.code === 11000) {
       user = await users.findOne({ email });
     } else {
@@ -65,7 +65,7 @@ export async function loginWithJwt(req, res) {
 
   res.status(200).json({
     success: true,
-    token, // Bearer fallback for clients that cannot use cookies
+    token,
     data: serializeUser(user),
   });
 }

@@ -7,6 +7,7 @@ import { getAvailableQuantity } from "../services/availability.js";
 import { calculateTotal, daysBetween } from "../services/pricing.js";
 import { getStripe } from "../config/stripe.js";
 import { env } from "../config/env.js";
+import { createNotification } from "./notifications.controller.js";
 
 const BOOKINGS_COLLECTION = "bookings";
 const EQUIPMENT_COLLECTION = "equipment";
@@ -48,7 +49,6 @@ export async function checkout(req, res) {
     return res.status(400).json({ success: false, message: "startDate cannot be in the past" });
   }
 
-  // Fails with 503 before a booking is created when Stripe is not configured.
   const stripe = getStripe();
 
   const db = await getDb();
@@ -101,7 +101,16 @@ export async function checkout(req, res) {
   const result = await db.collection(BOOKINGS_COLLECTION).insertOne(booking);
   const bookingId = result.insertedId;
 
-  // Stripe Checkout session. Prices come from the server-computed total.
+  await createNotification(
+    db,
+    booking.ownerEmail || "",
+    "new_booking",
+    "New Booking",
+    `You have a new booking for "${equipment.name}" from ${booking.customer?.name || "a customer"}.`,
+    "/dashboard/owner/my-rentals",
+    { bookingId: bookingId.toString(), equipmentId: booking.equipmentId?.toString?.() || booking.equipmentId?.toString() || "" }
+  );
+
   let session;
   try {
     session = await stripe.checkout.sessions.create({
@@ -127,7 +136,6 @@ export async function checkout(req, res) {
       cancel_url: `${env.clientUrl}/equipment/${equipment._id.toString()}?payment=cancelled`,
     });
   } catch (error) {
-    // Do not leave an orphan pending booking behind.
     await db.collection(BOOKINGS_COLLECTION).deleteOne({ _id: bookingId });
     console.error(`[stripe] Checkout session creation failed: ${error.message}`);
 

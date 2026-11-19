@@ -12,7 +12,6 @@ import {
 
 export const usersRouter = Router();
 
-// Every users route requires a valid token.
 usersRouter.use(verifyToken);
 
 usersRouter.get("/me", getMe);

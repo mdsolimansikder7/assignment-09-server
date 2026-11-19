@@ -9,6 +9,7 @@ import { favoritesRouter } from "./routes/favorites.js";
 import { bookingsRouter } from "./routes/bookings.js";
 import { paymentsRouter } from "./routes/payments.js";
 import { analyticsRouter } from "./routes/analytics.js";
+import { notificationsRouter } from "./routes/notifications.js";
 import { jobsRouter } from "./routes/jobs.js";
 import { adminRouter } from "./routes/admin.js";
 import { stripeWebhook } from "./controllers/payments.controller.js";
@@ -18,17 +19,12 @@ import { errorHandler } from "./middlewares/errorHandler.js";
 
 export const app = express();
 
-// Required for reverse proxies (Vercel, Render, etc.) so secure cookies
-// and protocol detection work correctly in production.
 app.set("trust proxy", 1);
 app.disable("x-powered-by");
 
 const corsOptions = {
   origin(origin, callback) {
-    // Allow same-origin/server-to-server requests (no Origin header).
     if (!origin) return callback(null, true);
-    // Denied origins get no CORS headers (the browser blocks the response)
-    // instead of an exception that would surface as a 500.
     return callback(null, env.allowedOrigins.includes(origin));
   },
   credentials: true,
@@ -36,12 +32,9 @@ const corsOptions = {
   allowedHeaders: ["Content-Type", "Authorization"],
 };
 
-// Answer every preflight request (OPTIONS) before it reaches the routers.
 app.options(/.*/, cors(corsOptions));
 app.use(cors(corsOptions));
 
-// NOTE: the Stripe webhook must receive the raw body, so it is mounted
-// before express.json(). Do not move this block below the JSON parser.
 app.post(
   "/api/payments/webhook",
   express.raw({ type: "application/json" }),
@@ -65,6 +58,7 @@ app.use("/api/favorites", favoritesRouter);
 app.use("/api/bookings", bookingsRouter);
 app.use("/api/payments", paymentsRouter);
 app.use("/api/analytics", analyticsRouter);
+app.use("/api/notifications", notificationsRouter);
 app.use("/api/jobs", jobsRouter);
 app.use("/api/admin", adminRouter);
 

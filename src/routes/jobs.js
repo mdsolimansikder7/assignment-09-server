@@ -6,7 +6,6 @@ import { updateCompletedBookings } from "../jobs/updateBookings.js";
 
 export const jobsRouter = Router();
 
-// Protected trigger for external schedulers when the host has no cron.
 jobsRouter.use(verifyToken, verifyAdmin);
 
 async function runUpdateBookings(req, res) {

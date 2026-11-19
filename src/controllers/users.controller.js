@@ -4,7 +4,6 @@ import { toObjectId } from "../utils/objectId.js";
 import { parseOrThrow } from "../utils/validate.js";
 import { serializeUser } from "../utils/serialize.js";
 
-// Role, email and status are deliberately not editable through this endpoint.
 const updateMeSchema = z.object({
   name: z.string().trim().min(2).max(80).optional(),
   photo: z.string().trim().max(500).optional(),
@@ -22,6 +21,10 @@ export async function getMe(req, res) {
 
 export async function updateMe(req, res) {
   const updates = parseOrThrow(updateMeSchema, req.body ?? {});
+
+  if (updates.photo === "") {
+    delete updates.photo;
+  }
 
   if (Object.keys(updates).length === 0) {
     return res.status(400).json({

@@ -5,19 +5,42 @@ import { toObjectId } from "../utils/objectId.js";
 import { parseOrThrow } from "../utils/validate.js";
 import { serializeBooking } from "../utils/serialize.js";
 import { z } from "zod";
+import { createNotification } from "./notifications.controller.js";
 
 const BOOKINGS_COLLECTION = "bookings";
 const PAYMENTS_COLLECTION = "payments";
+const USERS_COLLECTION = "users";
+const EQUIPMENT_COLLECTION = "equipment";
 
-const sessionIdSchema = z.string().trim().min(1).max(255);
+const sessionIdSchema = z.object({
+  session_id: z.string().trim().min(1).max(255),
+});
 
-/**
- * Marks a booking paid and stores the payment exactly once.
- * Safe to call from both the webhook and the verify endpoint:
- * the conditional update guarantees idempotency.
- */
-async function completePayment(session) {
-  const bookingId = session.metadata?.bookingId;
+async function resolvePaymentTransactionId(stripe, session) {
+  const source = session?.payment_intent;
+  const sourceId = typeof source === "string" ? source : source?.id || "";
+  if (sourceId) return sourceId;
+
+  const sessionId = session?.id;
+  if (!sessionId) return "";
+
+  try {
+    const full = await stripe.checkout.sessions.retrieve(sessionId, {
+      expand: ["payment_intent"],
+    });
+    const pi = full?.payment_intent;
+    if (typeof pi === "string") return pi;
+    return pi?.id || "";
+  } catch (error) {
+    console.warn(
+      `[stripe] Could not expand payment_intent for session ${sessionId}: ${error?.message || error}`,
+    );
+    return "";
+  }
+}
+
+async function completePayment(session, stripe = getStripe()) {
+  const bookingId = session?.metadata?.bookingId;
 
   if (!bookingId) {
     console.warn("[stripe] Session without bookingId metadata ignored");
@@ -33,62 +56,94 @@ async function completePayment(session) {
     return null;
   }
 
-  // Already processed: do nothing (webhooks are retried by Stripe).
-  if (booking.paymentStatus === "paid") {
-    return booking;
-  }
-
+  const transactionId = await resolvePaymentTransactionId(stripe, session);
+  const paymentMethod = session?.payment_method_types?.[0] || "card";
   const now = new Date();
+  const amount = (session?.amount_total ?? booking.totalAmount ?? 0) / 100;
+  const currency = session?.currency || "usd";
 
-  // Confirming the booking reserves the stock: availability subtracts
-  // confirmed/active bookings, so the quantity is never double counted.
-  const updatedBooking = await bookings.findOneAndUpdate(
-    { _id: booking._id, paymentStatus: { $ne: "paid" } },
-    {
-      $set: {
-        paymentStatus: "paid",
-        bookingStatus: "confirmed",
-        stripeSessionId: session.id,
-        updatedAt: now,
+  let finalBooking = booking;
+
+  if (booking.paymentStatus !== "paid") {
+    const updatedBooking = await bookings.findOneAndUpdate(
+      { _id: booking._id, paymentStatus: { $ne: "paid" } },
+      {
+        $set: {
+          paymentStatus: "paid",
+          bookingStatus: "confirmed",
+          stripeSessionId: session.id,
+          transactionId: transactionId || booking.transactionId,
+          paidAt: booking.paidAt || now,
+          updatedAt: now,
+        },
       },
-    },
-    { returnDocument: "after" },
-  );
+      { returnDocument: "after" },
+    );
 
-  if (!updatedBooking) {
-    // Another request won the race; nothing left to do.
-    return booking;
+    if (updatedBooking) finalBooking = updatedBooking;
   }
+
+  const customer = booking.customer?.email
+    ? await db.collection(USERS_COLLECTION).findOne({ email: booking.customer.email })
+    : null;
+  const owner = booking.ownerEmail
+    ? await db.collection(USERS_COLLECTION).findOne({ email: booking.ownerEmail })
+    : null;
+  const equipment = booking.equipmentId
+    ? await db.collection(EQUIPMENT_COLLECTION).findOne({
+        _id: toObjectId(booking.equipmentId, "equipment id"),
+      })
+    : null;
+
+  const paymentSet = {
+    bookingId: booking._id,
+    customerId: customer?._id?.toString() || null,
+    ownerId: owner?._id?.toString() || null,
+    equipmentId: booking.equipmentId?.toString?.() || booking.equipmentId?.toString() || null,
+    customerEmail: booking.customer?.email || "",
+    ownerEmail: booking.ownerEmail || "",
+    amount,
+    currency,
+    stripeSessionId: session.id,
+    paymentMethod,
+    status: "paid",
+    createdAt: now,
+    paidAt: now,
+    updatedAt: now,
+  };
+  if (transactionId) paymentSet.transactionId = transactionId;
 
   await db.collection(PAYMENTS_COLLECTION).updateOne(
     { stripeSessionId: session.id },
-    {
-      $setOnInsert: {
-        bookingId: booking._id,
-        customerEmail: booking.customer?.email || "",
-        ownerEmail: booking.ownerEmail || "",
-        amount: (session.amount_total ?? 0) / 100,
-        currency: session.currency || "usd",
-        transactionId:
-          typeof session.payment_intent === "string"
-            ? session.payment_intent
-            : session.payment_intent?.id || "",
-        stripeSessionId: session.id,
-        status: session.payment_status || "paid",
-        paidAt: now,
-      },
-    },
+    { $set: paymentSet },
     { upsert: true },
   );
 
-  return updatedBooking;
+  // Create notifications
+  await createNotification(
+    db,
+    booking.customer?.email || "",
+    "payment_received",
+    "Payment Received",
+    `Your payment of ${amount.toFixed(2)} ${currency.toUpperCase()} for "${booking.equipmentName}" has been confirmed.`,
+    "/dashboard/customer/my-rentals",
+    { bookingId: booking._id.toString(), transactionId }
+  );
+  if (booking.ownerEmail) {
+    await createNotification(
+      db,
+      booking.ownerEmail,
+      "payment_received",
+      "New Booking Payment",
+      `You received a payment of ${amount.toFixed(2)} ${currency.toUpperCase()} for "${booking.equipmentName}".`,
+      "/dashboard/owner/my-rentals",
+      { bookingId: booking._id.toString(), transactionId }
+    );
+  }
+
+  return finalBooking;
 }
 
-/**
- * Verifies a Stripe event payload and processes it. Shared by the Express
- * route (local / persistent hosts) and the Vercel Web API function.
- * Returns a status + JSON body instead of touching req/res directly.
- */
 export async function verifyAndProcessStripeEvent(rawBody, signature) {
   if (!env.stripeWebhookSecret) {
     return { status: 503, body: { success: false, message: "Stripe webhook is not configured" } };
@@ -104,22 +159,16 @@ export async function verifyAndProcessStripeEvent(rawBody, signature) {
   try {
     event = stripe.webhooks.constructEvent(rawBody, signature, env.stripeWebhookSecret);
   } catch {
-    // Never log the payload: it may contain customer data.
     return { status: 400, body: { success: false, message: "Invalid webhook signature" } };
   }
 
   if (event.type === "checkout.session.completed") {
-    await completePayment(event.data.object);
+    await completePayment(event.data.object, stripe);
   }
 
-  // Always acknowledge verified events so Stripe stops retrying.
   return { status: 200, body: { received: true } };
 }
 
-/**
- * Stripe webhook (Express). Must receive the raw body (registered before
- * express.json).
- */
 export async function stripeWebhook(req, res) {
   const result = await verifyAndProcessStripeEvent(
     req.body,
@@ -129,11 +178,6 @@ export async function stripeWebhook(req, res) {
   res.status(result.status).json(result.body);
 }
 
-
-/**
- * Retrieves a Checkout session, mapping Stripe's "no such session"
- * error to a clean 404 instead of a 500.
- */
 async function retrieveSession(stripe, sessionId) {
   try {
     return await stripe.checkout.sessions.retrieve(sessionId);
@@ -147,21 +191,26 @@ async function retrieveSession(stripe, sessionId) {
   }
 }
 
-/**
- * Fallback used by the payment success page. Verifies the session with
- * Stripe directly when the webhook has not arrived yet.
- */
 export async function verifyPayment(req, res) {
-  const sessionId = parseOrThrow(sessionIdSchema, req.params.sessionId);
+  const sessionId = (
+    req.query?.session_id ||
+    req.query?.sessionId ||
+    req.params?.sessionId ||
+    req.params?.session_id ||
+    ""
+  ).trim();
+
+  const parsed = parseOrThrow(sessionIdSchema, { session_id: sessionId });
+  const parsedSessionId = parsed.session_id;
 
   const db = await getDb();
-  let booking = await db.collection(BOOKINGS_COLLECTION).findOne({ stripeSessionId: sessionId });
+  let booking = await db.collection(BOOKINGS_COLLECTION).findOne({ stripeSessionId: parsedSessionId });
   let session = null;
 
   const stripe = getStripe();
 
   if (!booking) {
-    session = await retrieveSession(stripe, sessionId);
+    session = await retrieveSession(stripe, parsedSessionId);
 
     if (!session?.metadata?.bookingId) {
       return res.status(404).json({ success: false, message: "Booking not found for this session" });
@@ -181,17 +230,35 @@ export async function verifyPayment(req, res) {
   }
 
   if (booking.paymentStatus !== "paid") {
-    session = session || (await retrieveSession(stripe, sessionId));
-    if (session.payment_status === "paid") {
-      booking = (await completePayment(session)) || booking;
+    session = session || (await retrieveSession(stripe, parsedSessionId));
+    if (session?.payment_status === "paid") {
+      booking = (await completePayment(session, stripe)) || booking;
     }
   }
+
+  const payment = await db.collection(PAYMENTS_COLLECTION).findOne({
+    stripeSessionId: parsedSessionId,
+  });
+
+  const transactionId = payment?.transactionId || booking.transactionId || "";
+  const amount = payment?.amount ?? booking.totalAmount ?? 0;
+  const currency = payment?.currency || "usd";
+  const paidAt = payment?.paidAt || booking.paidAt || null;
 
   return res.status(200).json({
     success: true,
     data: {
       booking: serializeBooking(booking),
-      sessionStatus: session?.payment_status || booking.paymentStatus,
+      transactionId,
+      amount,
+      currency,
+      paymentStatus: booking.paymentStatus,
+      paidAt,
+      equipmentName: booking.equipmentName || "",
+      startDate: booking.startDate,
+      endDate: booking.endDate,
+      quantity: booking.quantity,
+      bookingId: booking._id.toString(),
     },
   });
 }

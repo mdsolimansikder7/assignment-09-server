@@ -7,34 +7,33 @@ import { startJobs } from "./jobs/index.js";
 async function start() {
   warnMissingEnv();
 
-  // Connect before listening but never crash: if MongoDB is unreachable the
-  // HTTP server still starts and individual requests fail cleanly instead of
-  // the whole deployment going down on a cold start.
+  let db;
   try {
-    const db = await connectDb();
+    db = await connectDb();
     console.log("[db] MongoDB connected");
-
-    try {
-      await ensureIndexes(db);
-    } catch (error) {
-      console.error(`[db] Index creation failed: ${error.message}`);
-    }
   } catch (error) {
     console.error(`[db] MongoDB connection failed: ${error.message}`);
+    process.exit(1); // DB ছাড়া server চালানোর মানে নেই
+  }
+
+  try {
+    await ensureIndexes(db);
+  } catch {
+    // index failures are non-fatal; keep server running silently
   }
 
   const server = app.listen(env.port, () => {
     console.log(`[server] API listening on port ${env.port} (${env.nodeEnv})`);
   });
 
-  startJobs();
-
   server.on("error", (error) => {
     console.error(`[server] Failed to listen on port ${env.port}: ${error.message}`);
+    process.exit(1);
   });
+
+  startJobs();
 }
 
-// A stray rejection should never take the API down; log it instead.
 process.on("unhandledRejection", (reason) => {
   const message = reason instanceof Error ? reason.message : String(reason);
   console.error(`[process] Unhandled rejection: ${message}`);
@@ -42,6 +41,7 @@ process.on("unhandledRejection", (reason) => {
 
 process.on("uncaughtException", (error) => {
   console.error(`[process] Uncaught exception: ${error.message}`);
+  process.exit(1);
 });
 
 start();

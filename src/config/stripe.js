@@ -3,10 +3,6 @@ import { env } from "./env.js";
 
 let stripeClient = null;
 
-/**
- * Lazily creates the Stripe client so importing this module never fails
- * when the key is missing (e.g. running the API without payments).
- */
 export function getStripe() {
   if (!env.stripeSecretKey) {
     const error = new Error("Stripe is not configured");

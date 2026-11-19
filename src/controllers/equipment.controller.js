@@ -7,7 +7,6 @@ import { escapeRegex } from "../utils/regex.js";
 
 const EQUIPMENT_COLLECTION = "equipment";
 
-// Client supplied status, owner and timestamps are never trusted.
 const equipmentSchema = z.object({
   name: z.string().trim().min(2).max(120),
   description: z.string().trim().min(10).max(3000),
@@ -25,7 +24,6 @@ const equipmentSchema = z.object({
 
 const equipmentUpdateSchema = equipmentSchema.partial();
 
-// Query params for the public listing. All filtering happens in MongoDB.
 const listQuerySchema = z
   .object({
     search: z.string().trim().max(100).optional(),
@@ -52,7 +50,6 @@ const SORT_OPTIONS = {
   newest: { createdAt: -1 },
 };
 
-// Empty query params ("?category=") are treated as absent.
 function cleanQuery(query) {
   return Object.fromEntries(
     Object.entries(query).filter(([, value]) => value !== undefined && value !== null && value !== ""),
@@ -68,7 +65,7 @@ function buildEquipmentFilter(query) {
   }
 
   if (query.category) {
-    filter.category = new RegExp(`^${escapeRegex(query.category)}$`, "i");
+    filter.category = new RegExp(`^${escapeRegex(query.category.trim())}$`, "i");
   }
 
   if (query.rentalType) {
@@ -103,7 +100,7 @@ export async function createEquipment(req, res) {
 
   const document = {
     ...data,
-    status: "pending", // every new listing waits for admin approval
+    status: "pending",
     owner: ownerSnapshot(req.user),
     createdAt: now,
     updatedAt: now,
@@ -179,10 +176,18 @@ export async function getEquipmentById(req, res) {
     return res.status(404).json({ success: false, message: "Equipment not found" });
   }
 
-  // Unapproved listings are only visible to their owner and to admins.
-  const isOwner = item.owner?.email === req.user.email;
-  const isAdmin = req.user.role === "admin";
-  if (item.status !== "approved" && !isOwner && !isAdmin) {
+  const role = req.user?.role;
+  const isApproved = item.status === "approved";
+  const isOwner = role === "owner" && item.owner?.email === req.user?.email;
+  const isAdmin = role === "admin";
+
+  // Visibility:
+  // - customer: approved equipment only
+  // - owner: approved equipment + their own equipment (any status)
+  // - admin: everything
+  const isVisible = isAdmin || isApproved || isOwner;
+
+  if (!isVisible) {
     return res.status(404).json({ success: false, message: "Equipment not found" });
   }
 
@@ -229,7 +234,6 @@ export async function updateEquipment(req, res) {
 
   const update = { ...updates, updatedAt: new Date() };
 
-  // Keep the owner snapshot in sync with the profile that owns the listing.
   if (req.user.role !== "admin") {
     update.owner = ownerSnapshot(req.user);
   }

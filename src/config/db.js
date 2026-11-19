@@ -1,9 +1,6 @@
 import { MongoClient } from "mongodb";
 import { env } from "./env.js";
 
-// Cache the client promise at module scope. Serverless platforms such as
-// Vercel reuse warm instances, so caching avoids opening a new connection
-// (and the resulting 504 timeout) on every request.
 let clientPromise = null;
 
 export function getClient() {
@@ -18,8 +15,6 @@ export function getClient() {
     });
 
     clientPromise = client.connect().catch((error) => {
-      // Reset the cache so the next request can retry instead of
-      // reusing a rejected promise forever.
       clientPromise = null;
       throw error;
     });

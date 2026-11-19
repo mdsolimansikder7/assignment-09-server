@@ -5,7 +5,6 @@ let transporter = null;
 
 function getTransporter() {
   if (!env.emailUser || !env.emailPass) {
-    // Notifications are optional: skip silently when credentials are absent.
     return null;
   }
 
@@ -23,11 +22,6 @@ function formatDate(value) {
   return new Date(value).toISOString().slice(0, 10);
 }
 
-/**
- * Sends the "rental completed" emails to the customer and the owner.
- * Notification failures are logged and never propagate to the caller,
- * so a broken mail server can never fail the main request.
- */
 export async function sendRentalCompletedEmails(booking) {
   const mailer = getTransporter();
   if (!mailer) return;
@@ -58,7 +52,6 @@ export async function sendRentalCompletedEmails(booking) {
       .map((message) => mailer.sendMail({ from: env.emailUser, ...message })),
   );
 
-  // Notification failures are logged but never propagated to the caller.
   results.forEach((result) => {
     if (result.status === "rejected") {
       const reason = result.reason instanceof Error ? result.reason.message : String(result.reason);

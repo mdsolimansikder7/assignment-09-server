@@ -1,6 +1,3 @@
-/**
- * Shapes a raw MongoDB user document for API responses.
- */
 export function serializeUser(user) {
   if (!user) return null;
 
@@ -17,9 +14,6 @@ export function serializeUser(user) {
   };
 }
 
-/**
- * Shapes a raw MongoDB equipment document for API responses.
- */
 export function serializeEquipment(item) {
   if (!item) return null;
 
@@ -50,9 +44,6 @@ export function serializeEquipment(item) {
   };
 }
 
-/**
- * Shapes a raw MongoDB favorite document for API responses.
- */
 export function serializeFavorite(favorite) {
   if (!favorite) return null;
 
@@ -63,9 +54,6 @@ export function serializeFavorite(favorite) {
   };
 }
 
-/**
- * Shapes a raw MongoDB booking document for API responses.
- */
 export function serializeBooking(booking) {
   if (!booking) return null;
 
@@ -90,6 +78,8 @@ export function serializeBooking(booking) {
     paymentStatus: booking.paymentStatus,
     bookingStatus: booking.bookingStatus,
     stripeSessionId: booking.stripeSessionId || null,
+    transactionId: booking.transactionId || "",
+    paidAt: booking.paidAt || null,
     createdAt: booking.createdAt,
     updatedAt: booking.updatedAt,
   };

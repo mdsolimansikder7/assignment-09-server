@@ -33,7 +33,6 @@ export async function addFavorite(req, res) {
       data: serializeFavorite({ ...favorite, _id: result.insertedId }),
     });
   } catch (error) {
-    // Unique index on (userEmail, equipmentId) guards against duplicates.
     if (error.code === 11000) {
       return res.status(409).json({ success: false, message: "Equipment already in favorites" });
     }
@@ -57,7 +56,6 @@ export async function listFavorites(req, res) {
           as: "equipment",
         },
       },
-      // Skip favorites whose equipment was deleted.
       { $unwind: "$equipment" },
     ])
     .toArray();

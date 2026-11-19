@@ -12,11 +12,6 @@ function extractToken(req) {
   return req.cookies?.[AUTH_COOKIE_NAME] || null;
 }
 
-/**
- * Reads the JWT from the httpOnly cookie (or Bearer header fallback),
- * verifies it and loads fresh user data from MongoDB onto req.user.
- * The role always comes from the database, never from the token body.
- */
 export async function verifyToken(req, res, next) {
   try {
     const token = extractToken(req);

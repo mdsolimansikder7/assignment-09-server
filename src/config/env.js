@@ -27,15 +27,9 @@ export const env = {
   isProduction: nodeEnv === "production",
   emailUser: process.env.EMAIL_USER || "",
   emailPass: process.env.EMAIL_PASS || "",
-  // Local origins are only trusted outside production.
   allowedOrigins,
 };
 
-/**
- * Logs missing configuration without printing any secret value.
- * The server still starts so that cold starts never crash; the
- * affected features simply fail with a clear error at request time.
- */
 export function warnMissingEnv() {
   const required = ["MONGODB_URI", "JWT_SECRET"];
   if (env.isProduction) required.push("STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET");

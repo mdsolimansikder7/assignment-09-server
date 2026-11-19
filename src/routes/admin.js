@@ -13,7 +13,6 @@ import {
 
 export const adminRouter = Router();
 
-// Every admin route requires a valid token with the admin role.
 adminRouter.use(verifyToken, verifyAdmin);
 
 adminRouter.get("/equipment", asyncHandler(listAllEquipment));
