@@ -12,7 +12,7 @@ const statusSchema = z.object({
 
 export async function listAllEquipment(req, res) {
   const db = await getDb();
-  const filter = {};
+  const match = {};
 
   if (req.query.status) {
     const result = z.enum(["pending", "approved", "rejected"]).safeParse(req.query.status);
@@ -22,14 +22,19 @@ export async function listAllEquipment(req, res) {
         message: "status must be one of: pending, approved, rejected",
       });
     }
-    filter.status = result.data;
+    match.status = result.data;
   }
 
-  const items = await db
-    .collection(EQUIPMENT_COLLECTION)
-    .find(filter)
-    .sort({ createdAt: -1 })
-    .toArray();
+  // "All": pending items first, then newest first within each group.
+  // Specific status filter: normal newest-first order.
+  const pipeline = [
+    ...(Object.keys(match).length > 0 ? [{ $match: match }] : []),
+    { $addFields: { statusOrder: { $cond: [{ $eq: ["$status", "pending"] }, 0, 1] } } },
+    { $sort: req.query.status ? { createdAt: -1 } : { statusOrder: 1, createdAt: -1 } },
+    { $unset: "statusOrder" },
+  ];
+
+  const items = await db.collection(EQUIPMENT_COLLECTION).aggregate(pipeline).toArray();
 
   res.status(200).json({
     success: true,
