@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { verifyToken } from "../middlewares/verifyToken.js";
-import { verifyOwner, verifyOwnerOrAdmin, authorizeRoles } from "../middlewares/verifyRole.js";
+import { verifyCustomer, verifyOwner, verifyOwnerOrAdmin, authorizeRoles } from "../middlewares/verifyRole.js";
 import {
   createEquipment,
   deleteEquipment,
@@ -12,6 +12,11 @@ import {
   listMyEquipment,
   updateEquipment,
 } from "../controllers/equipment.controller.js";
+import {
+  canReviewEquipment,
+  createEquipmentReview,
+  listEquipmentReviews,
+} from "../controllers/reviews.controller.js";
 
 export const equipmentRouter = Router();
 
@@ -20,6 +25,10 @@ equipmentRouter.get("/featured", asyncHandler(listFeaturedEquipment));
 equipmentRouter.get("/categories", asyncHandler(listCategories));
 
 equipmentRouter.get("/owner/mine", verifyToken, verifyOwner, asyncHandler(listMyEquipment));
+
+equipmentRouter.get("/:id/reviews", asyncHandler(listEquipmentReviews));
+equipmentRouter.get("/:id/reviews/can-review", verifyToken, asyncHandler(canReviewEquipment));
+equipmentRouter.post("/:id/reviews", verifyToken, verifyCustomer, asyncHandler(createEquipmentReview));
 
 equipmentRouter.post("/", verifyToken, verifyOwner, asyncHandler(createEquipment));
 

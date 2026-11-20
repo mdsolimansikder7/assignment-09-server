@@ -31,4 +31,10 @@ export async function ensureIndexes(db) {
       },
     },
   );
+
+  await db.collection("reviews").createIndex({ equipmentId: 1, createdAt: -1 });
+  await db.collection("reviews").createIndex(
+    { equipmentId: 1, userEmail: 1 },
+    { unique: true },
+  );
 }

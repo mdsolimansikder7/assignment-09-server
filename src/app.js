@@ -12,6 +12,7 @@ import { analyticsRouter } from "./routes/analytics.js";
 import { notificationsRouter } from "./routes/notifications.js";
 import { jobsRouter } from "./routes/jobs.js";
 import { adminRouter } from "./routes/admin.js";
+import { reviewsRouter } from "./routes/reviews.js";
 import { stripeWebhook } from "./controllers/payments.controller.js";
 import { asyncHandler } from "./utils/asyncHandler.js";
 import { notFound } from "./middlewares/notFound.js";
@@ -61,6 +62,7 @@ app.use("/api/analytics", analyticsRouter);
 app.use("/api/notifications", notificationsRouter);
 app.use("/api/jobs", jobsRouter);
 app.use("/api/admin", adminRouter);
+app.use("/api/reviews", reviewsRouter);
 
 app.use(notFound);
 app.use(errorHandler);

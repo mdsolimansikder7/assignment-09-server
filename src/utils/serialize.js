@@ -34,6 +34,8 @@ export function serializeEquipment(item) {
     image: item.image || "",
     terms: item.terms || "",
     status: item.status,
+    averageRating: typeof item.averageRating === "number" ? item.averageRating : 0,
+    reviewCount: typeof item.reviewCount === "number" ? item.reviewCount : 0,
     owner: {
       name: owner.name || "",
       email: owner.email || "",
@@ -82,5 +84,22 @@ export function serializeBooking(booking) {
     paidAt: booking.paidAt || null,
     createdAt: booking.createdAt,
     updatedAt: booking.updatedAt,
+  };
+}
+
+export function serializeReview(review) {
+  if (!review) return null;
+
+  return {
+    id: review._id.toString(),
+    equipmentId: review.equipmentId?.toString?.() || "",
+    bookingId: review.bookingId?.toString?.() || "",
+    userEmail: review.userEmail || "",
+    userName: review.userName || "",
+    userAvatar: review.userAvatar || "",
+    rating: review.rating,
+    comment: review.comment || "",
+    createdAt: review.createdAt || null,
+    updatedAt: review.updatedAt || null,
   };
 }
