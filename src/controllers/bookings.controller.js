@@ -277,16 +277,23 @@ export async function listAllBookings(req, res) {
 export async function updateBookingStatus(req, res) {
   const { bookingStatus } = parseOrThrow(adminUpdateSchema, req.body ?? {});
   const db = await getDb();
+  const bookingId = toObjectId(req.params.id, "booking id");
+  const existing = await db.collection(BOOKINGS_COLLECTION).findOne({ _id: bookingId });
 
-  const booking = await db.collection(BOOKINGS_COLLECTION).findOneAndUpdate(
-    { _id: toObjectId(req.params.id, "booking id") },
-    { $set: { bookingStatus, updatedAt: new Date() } },
-    { returnDocument: "after" },
-  );
-
-  if (!booking) {
+  if (!existing) {
     return res.status(404).json({ success: false, message: "Booking not found" });
   }
+
+  const updateSet = { bookingStatus, updatedAt: new Date() };
+  if (bookingStatus === "cancelled" && existing.paymentStatus === "paid") {
+    updateSet.refundNote = "Refund pending";
+  }
+
+  const booking = await db.collection(BOOKINGS_COLLECTION).findOneAndUpdate(
+    { _id: bookingId },
+    { $set: updateSet },
+    { returnDocument: "after" },
+  );
 
   return res.status(200).json({ success: true, data: serializeBooking(booking) });
 }

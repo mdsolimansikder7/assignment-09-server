@@ -82,6 +82,7 @@ export function serializeBooking(booking) {
     bookingStatus: booking.bookingStatus,
     stripeSessionId: booking.stripeSessionId || null,
     transactionId: booking.transactionId || "",
+    refundNote: booking.refundNote || "",
     paidAt: booking.paidAt || null,
     createdAt: booking.createdAt,
     updatedAt: booking.updatedAt,
