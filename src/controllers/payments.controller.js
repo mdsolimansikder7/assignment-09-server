@@ -1,3 +1,4 @@
+import { ObjectId } from "mongodb";
 import { getDb } from "../config/db.js";
 import { env } from "../config/env.js";
 import { getStripe } from "../config/stripe.js";
@@ -15,6 +16,19 @@ const EQUIPMENT_COLLECTION = "equipment";
 const sessionIdSchema = z.object({
   session_id: z.string().trim().min(1).max(255),
 });
+
+function readMetadataString(metadata, key) {
+  const value = metadata?.[key];
+  return typeof value === "string" ? value : "";
+}
+
+function logMetadataIssue(scope, sessionId, field, value) {
+  const safeValue =
+    value === undefined ? "undefined" : value === null ? "null" : String(value);
+  console.warn(
+    `[stripe] ${scope}: missing/invalid metadata field "${field}" for session ${sessionId || "unknown"} (value: ${safeValue})`,
+  );
+}
 
 async function resolvePaymentTransactionId(stripe, session) {
   const source = session?.payment_intent;
@@ -39,20 +53,55 @@ async function resolvePaymentTransactionId(stripe, session) {
   }
 }
 
-async function completePayment(session, stripe = getStripe()) {
-  const bookingId = session?.metadata?.bookingId;
+async function findBookingForSession(db, session) {
+  const bookings = db.collection(BOOKINGS_COLLECTION);
+  const sessionId = session?.id || "";
+  const metadata = session?.metadata || {};
 
-  if (!bookingId) {
-    console.warn("[stripe] Session without bookingId metadata ignored");
+  const bookingId = readMetadataString(metadata, "bookingId");
+  const equipmentId = readMetadataString(metadata, "equipmentId");
+  const startDate = readMetadataString(metadata, "startDate");
+  const endDate = readMetadataString(metadata, "endDate");
+  const customerEmail = readMetadataString(metadata, "customerEmail");
+
+  if (!bookingId) logMetadataIssue("completePayment", sessionId, "bookingId", metadata?.bookingId);
+  if (!equipmentId) logMetadataIssue("completePayment", sessionId, "equipmentId", metadata?.equipmentId);
+  if (!startDate) logMetadataIssue("completePayment", sessionId, "startDate", metadata?.startDate);
+  if (!endDate) logMetadataIssue("completePayment", sessionId, "endDate", metadata?.endDate);
+  if (!customerEmail) logMetadataIssue("completePayment", sessionId, "customerEmail", metadata?.customerEmail);
+
+  let booking = null;
+
+  if (bookingId) {
+    if (!ObjectId.isValid(bookingId) || !/^[0-9a-fA-F]{24}$/.test(bookingId)) {
+      logMetadataIssue("completePayment", sessionId, "bookingId", bookingId);
+    } else {
+      booking = await bookings.findOne({ _id: toObjectId(bookingId, "booking id") });
+    }
+  }
+
+  if (!booking && sessionId) {
+    booking = await bookings.findOne({ stripeSessionId: sessionId });
+    if (booking) {
+      console.warn(`[stripe] completePayment: fell back to booking lookup by stripeSessionId for session ${sessionId}`);
+    }
+  }
+
+  return booking;
+}
+
+async function completePayment(session, stripe = getStripe()) {
+  if (!session?.id) {
+    console.warn("[stripe] completePayment called without a session id");
     return null;
   }
 
   const db = await getDb();
   const bookings = db.collection(BOOKINGS_COLLECTION);
-  const booking = await bookings.findOne({ _id: toObjectId(bookingId, "booking id") });
+  const booking = await findBookingForSession(db, session);
 
   if (!booking) {
-    console.warn(`[stripe] Booking ${bookingId} not found for session ${session.id}`);
+    console.warn(`[stripe] Booking not found for session ${session.id}`);
     return null;
   }
 
@@ -89,17 +138,40 @@ async function completePayment(session, stripe = getStripe()) {
   const owner = booking.ownerEmail
     ? await db.collection(USERS_COLLECTION).findOne({ email: booking.ownerEmail })
     : null;
-  const equipment = booking.equipmentId
-    ? await db.collection(EQUIPMENT_COLLECTION).findOne({
-        _id: toObjectId(booking.equipmentId, "equipment id"),
-      })
-    : null;
+
+  let equipmentIdValue = null;
+  try {
+    if (booking.equipmentId) {
+      equipmentIdValue = booking.equipmentId.toString();
+    } else {
+      const metadataEquipmentId = readMetadataString(session?.metadata || {}, "equipmentId");
+      if (metadataEquipmentId) equipmentIdValue = metadataEquipmentId;
+    }
+  } catch {
+    equipmentIdValue = null;
+  }
+
+  if (equipmentIdValue && (!ObjectId.isValid(equipmentIdValue) || !/^[0-9a-fA-F]{24}$/.test(equipmentIdValue))) {
+    logMetadataIssue("completePayment", session.id, "equipmentId(from booking)", equipmentIdValue);
+  }
+
+  try {
+    if (equipmentIdValue && ObjectId.isValid(equipmentIdValue) && /^[0-9a-fA-F]{24}$/.test(equipmentIdValue)) {
+      await db.collection(EQUIPMENT_COLLECTION).findOne({
+        _id: toObjectId(equipmentIdValue, "equipment id"),
+      });
+    }
+  } catch (error) {
+    console.warn(
+      `[stripe] completePayment: could not load equipment for session ${session.id} (equipmentId: ${equipmentIdValue || "missing"}): ${error?.message || error}`,
+    );
+  }
 
   const paymentSet = {
     bookingId: booking._id,
     customerId: customer?._id?.toString() || null,
     ownerId: owner?._id?.toString() || null,
-    equipmentId: booking.equipmentId?.toString?.() || booking.equipmentId?.toString() || null,
+    equipmentId: equipmentIdValue,
     customerEmail: booking.customer?.email || "",
     ownerEmail: booking.ownerEmail || "",
     amount,
@@ -210,18 +282,35 @@ export async function verifyPayment(req, res) {
 
   if (!booking) {
     session = await retrieveSession(stripe, parsedSessionId);
+    const metadata = session?.metadata || {};
 
-    if (!session?.metadata?.bookingId) {
-      return res.status(404).json({ success: false, message: "Booking not found for this session" });
+    const bookingId = readMetadataString(metadata, "bookingId");
+    const equipmentId = readMetadataString(metadata, "equipmentId");
+    const startDate = readMetadataString(metadata, "startDate");
+    const endDate = readMetadataString(metadata, "endDate");
+    const customerEmail = readMetadataString(metadata, "customerEmail");
+
+    if (!bookingId) logMetadataIssue("verifyPayment", parsedSessionId, "bookingId", metadata?.bookingId);
+    if (!equipmentId) logMetadataIssue("verifyPayment", parsedSessionId, "equipmentId", metadata?.equipmentId);
+    if (!startDate) logMetadataIssue("verifyPayment", parsedSessionId, "startDate", metadata?.startDate);
+    if (!endDate) logMetadataIssue("verifyPayment", parsedSessionId, "endDate", metadata?.endDate);
+    if (!customerEmail) logMetadataIssue("verifyPayment", parsedSessionId, "customerEmail", metadata?.customerEmail);
+
+    if (bookingId && ObjectId.isValid(bookingId) && /^[0-9a-fA-F]{24}$/.test(bookingId)) {
+      booking = await db
+        .collection(BOOKINGS_COLLECTION)
+        .findOne({ _id: toObjectId(bookingId, "booking id") });
+    } else if (bookingId) {
+      logMetadataIssue("verifyPayment", parsedSessionId, "bookingId", bookingId);
     }
 
-    booking = await db
-      .collection(BOOKINGS_COLLECTION)
-      .findOne({ _id: toObjectId(session.metadata.bookingId, "booking id") });
+    if (!booking) {
+      booking = await db.collection(BOOKINGS_COLLECTION).findOne({ stripeSessionId: parsedSessionId });
+    }
   }
 
   if (!booking) {
-    return res.status(404).json({ success: false, message: "Booking not found" });
+    return res.status(404).json({ success: false, message: "Booking not found for this payment session" });
   }
 
   if (booking.customer?.email !== req.user.email) {
@@ -230,6 +319,24 @@ export async function verifyPayment(req, res) {
 
   if (booking.paymentStatus !== "paid") {
     session = session || (await retrieveSession(stripe, parsedSessionId));
+
+    const metadata = session?.metadata || {};
+    const metadataBookingId = readMetadataString(metadata, "bookingId");
+    const metadataEquipmentId = readMetadataString(metadata, "equipmentId");
+    const metadataStartDate = readMetadataString(metadata, "startDate");
+    const metadataEndDate = readMetadataString(metadata, "endDate");
+    const metadataCustomerEmail = readMetadataString(metadata, "customerEmail");
+
+    if (!metadataBookingId) logMetadataIssue("verifyPayment", parsedSessionId, "bookingId", metadata?.bookingId);
+    if (!metadataEquipmentId) logMetadataIssue("verifyPayment", parsedSessionId, "equipmentId", metadata?.equipmentId);
+    if (!metadataStartDate) logMetadataIssue("verifyPayment", parsedSessionId, "startDate", metadata?.startDate);
+    if (!metadataEndDate) logMetadataIssue("verifyPayment", parsedSessionId, "endDate", metadata?.endDate);
+    if (!metadataCustomerEmail) logMetadataIssue("verifyPayment", parsedSessionId, "customerEmail", metadata?.customerEmail);
+
+    if (metadataEquipmentId && !(ObjectId.isValid(metadataEquipmentId) && /^[0-9a-fA-F]{24}$/.test(metadataEquipmentId))) {
+      logMetadataIssue("verifyPayment", parsedSessionId, "equipmentId", metadataEquipmentId);
+    }
+
     if (session?.payment_status === "paid") {
       booking = (await completePayment(session, stripe)) || booking;
     }

@@ -131,6 +131,9 @@ export async function checkout(req, res) {
       metadata: {
         bookingId: bookingId.toString(),
         equipmentId: equipment._id.toString(),
+        startDate: data.startDate.toISOString(),
+        endDate: data.endDate.toISOString(),
+        customerEmail: req.user.email,
       },
       success_url: `${env.clientUrl}/bookings/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${env.clientUrl}/equipment/${equipment._id.toString()}?payment=cancelled`,
