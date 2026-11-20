@@ -8,6 +8,7 @@ import { calculateTotal, daysBetween } from "../services/pricing.js";
 import { getStripe } from "../config/stripe.js";
 import { env } from "../config/env.js";
 import { createNotification } from "./notifications.controller.js";
+import { sendRentalCompletedEmails } from "../services/email.js";
 
 const BOOKINGS_COLLECTION = "bookings";
 const EQUIPMENT_COLLECTION = "equipment";
@@ -34,6 +35,10 @@ const listQuerySchema = z.object({
 
 const adminUpdateSchema = z.object({
   bookingStatus: z.enum(["pending", "confirmed", "active", "completed", "cancelled"]),
+});
+
+const ownerStatusSchema = z.object({
+  bookingStatus: z.enum(["active", "completed", "cancelled"]),
 });
 
 function startOfToday() {
@@ -249,4 +254,96 @@ export async function updateBookingStatus(req, res) {
   }
 
   return res.status(200).json({ success: true, data: serializeBooking(booking) });
+}
+
+export async function updateBookingStatusByOwner(req, res) {
+  const { bookingStatus } = parseOrThrow(ownerStatusSchema, req.body ?? {});
+  const bookingId = toObjectId(req.params.id, "booking id");
+  const db = await getDb();
+  const collection = db.collection(BOOKINGS_COLLECTION);
+
+  const booking = await collection.findOne({ _id: bookingId });
+
+  if (!booking) {
+    return res.status(404).json({ success: false, message: "Booking not found" });
+  }
+
+  if (booking.ownerEmail !== req.user.email) {
+    return res.status(403).json({ success: false, message: "You can only manage rentals for your own equipment" });
+  }
+
+  const current = booking.bookingStatus;
+
+  if (current === "completed" || current === "cancelled") {
+    return res.status(400).json({ success: false, message: "Completed or cancelled bookings cannot be changed" });
+  }
+
+  let allowed = false;
+  if (bookingStatus === "active" && current === "confirmed") allowed = true;
+  if (bookingStatus === "completed" && current === "active") allowed = true;
+  if (
+    bookingStatus === "cancelled" &&
+    (current === "pending" || current === "confirmed") &&
+    booking.paymentStatus !== "paid"
+  ) {
+    allowed = true;
+  }
+
+  if (!allowed) {
+    if (bookingStatus === "cancelled" && booking.paymentStatus === "paid") {
+      return res.status(400).json({ success: false, message: "Paid bookings cannot be cancelled" });
+    }
+    return res.status(400).json({
+      success: false,
+      message: `Cannot change booking status from "${current}" to "${bookingStatus}"`,
+    });
+  }
+
+  const now = new Date();
+  const update = {
+    $set: {
+      bookingStatus,
+      updatedAt: now,
+    },
+  };
+
+  const wasCompleted = Boolean(booking.completedAt) || current === "completed";
+  if (bookingStatus === "completed") {
+    update.$set.completedAt = booking.completedAt || now;
+  }
+
+  const updated = await collection.findOneAndUpdate(
+    { _id: bookingId },
+    update,
+    { returnDocument: "after" },
+  );
+
+  if (!updated) {
+    return res.status(404).json({ success: false, message: "Booking not found" });
+  }
+
+  if (bookingStatus === "completed" && !wasCompleted) {
+    await sendRentalCompletedEmails(updated);
+  }
+
+  const statusMessages = {
+    active: `Your rental of "${updated.equipmentName}" is now active.`,
+    completed: `Your rental of "${updated.equipmentName}" has been completed.`,
+    cancelled: `Your rental of "${updated.equipmentName}" has been cancelled by the owner.`,
+  };
+
+  const customerEmail = updated.customer?.email || "";
+  if (customerEmail && statusMessages[bookingStatus]) {
+    await createNotification(
+      db,
+      customerEmail,
+      "booking_status",
+      "Rental status updated",
+      statusMessages[bookingStatus],
+      "/dashboard/customer/my-rentals",
+      { bookingId: updated._id.toString(), bookingStatus },
+    );
+  }
+
+  return res.status(200).json({ success: true, data: serializeBooking(updated) });
 }

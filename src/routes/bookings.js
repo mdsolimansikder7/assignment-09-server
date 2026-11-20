@@ -6,6 +6,7 @@ import {
   checkout,
   listMyBookings,
   listOwnerBookings,
+  updateBookingStatusByOwner,
 } from "../controllers/bookings.controller.js";
 
 export const bookingsRouter = Router();
@@ -13,3 +14,4 @@ export const bookingsRouter = Router();
 bookingsRouter.post("/checkout", verifyToken, verifyCustomer, asyncHandler(checkout));
 bookingsRouter.get("/mine", verifyToken, verifyCustomer, asyncHandler(listMyBookings));
 bookingsRouter.get("/owner", verifyToken, verifyOwner, asyncHandler(listOwnerBookings));
+bookingsRouter.patch("/:id/owner-status", verifyToken, verifyOwner, asyncHandler(updateBookingStatusByOwner));

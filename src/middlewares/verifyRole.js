@@ -33,6 +33,7 @@ export function authorizeRoles(...roles) {
 }
 
 export const verifyCustomer = requireRole("customer");
+export const verifyRenter = verifyCustomer;
 export const verifyOwner = requireRole("owner");
 export const verifyAdmin = requireRole("admin");
 

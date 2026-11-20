@@ -17,14 +17,21 @@ export async function updateCompletedBookings() {
     return { completed: 0 };
   }
 
-  await bookings.updateMany(
-    { _id: { $in: due.map((booking) => booking._id) }, bookingStatus: { $in: ACTIVE_STATUSES } },
-    { $set: { bookingStatus: "completed", updatedAt: now } },
+  const ids = due.map((booking) => booking._id);
+  const result = await bookings.updateMany(
+    { _id: { $in: ids }, bookingStatus: { $in: ACTIVE_STATUSES } },
+    { $set: { bookingStatus: "completed", completedAt: now, updatedAt: now } },
   );
 
-  await Promise.allSettled(
-    due.map((booking) => sendRentalCompletedEmails(booking)),
-  );
+  if (result.modifiedCount > 0) {
+    // Only email bookings that were actually transitioned by this run.
+    const transitioned = due.filter((booking) => ACTIVE_STATUSES.includes(booking.bookingStatus));
+    await Promise.allSettled(
+      transitioned.map((booking) =>
+        sendRentalCompletedEmails({ ...booking, bookingStatus: "completed", completedAt: now }),
+      ),
+    );
+  }
 
-  return { completed: due.length };
+  return { completed: result.modifiedCount || 0 };
 }
