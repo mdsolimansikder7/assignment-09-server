@@ -13,6 +13,35 @@ import { sendRentalCompletedEmails } from "../services/email.js";
 const BOOKINGS_COLLECTION = "bookings";
 const EQUIPMENT_COLLECTION = "equipment";
 
+async function attachEquipmentImages(db, bookings) {
+  const ids = [...new Set(bookings.map((b) => b.equipmentId?.toString?.()).filter(Boolean))];
+  if (ids.length === 0) return bookings;
+
+  const objectIds = ids
+    .map((id) => {
+      try {
+        return toObjectId(id, "equipment id");
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean);
+
+  if (objectIds.length === 0) return bookings;
+
+  const equipmentDocs = await db
+    .collection(EQUIPMENT_COLLECTION)
+    .find({ _id: { $in: objectIds } }, { projection: { image: 1 } })
+    .toArray();
+
+  const imageMap = new Map(equipmentDocs.map((doc) => [doc._id.toString(), doc.image || ""]));
+
+  return bookings.map((booking) => ({
+    ...booking,
+    equipmentImage: booking.equipmentImage || imageMap.get(booking.equipmentId?.toString?.()) || "",
+  }));
+}
+
 const checkoutSchema = z
   .object({
     equipmentId: z.string().trim().min(1),
@@ -180,9 +209,11 @@ export async function listMyBookings(req, res) {
     db.collection(BOOKINGS_COLLECTION).countDocuments(filter),
   ]);
 
+  const enriched = await attachEquipmentImages(db, items);
+
   res.status(200).json({
     success: true,
-    data: items.map(serializeBooking),
+    data: enriched.map(serializeBooking),
     total,
     page,
     totalPages: Math.ceil(total / limit),
@@ -205,9 +236,11 @@ export async function listOwnerBookings(req, res) {
     db.collection(BOOKINGS_COLLECTION).countDocuments(filter),
   ]);
 
+  const enriched = await attachEquipmentImages(db, items);
+
   res.status(200).json({
     success: true,
-    data: items.map(serializeBooking),
+    data: enriched.map(serializeBooking),
     total,
     page,
     totalPages: Math.ceil(total / limit),
@@ -230,9 +263,11 @@ export async function listAllBookings(req, res) {
     db.collection(BOOKINGS_COLLECTION).countDocuments(filter),
   ]);
 
+  const enriched = await attachEquipmentImages(db, items);
+
   res.status(200).json({
     success: true,
-    data: items.map(serializeBooking),
+    data: enriched.map(serializeBooking),
     total,
     page,
     totalPages: Math.ceil(total / limit),
@@ -322,8 +357,10 @@ export async function updateBookingStatusByOwner(req, res) {
     return res.status(404).json({ success: false, message: "Booking not found" });
   }
 
+  const [enrichedUpdated] = await attachEquipmentImages(db, [updated]);
+
   if (bookingStatus === "completed" && !wasCompleted) {
-    await sendRentalCompletedEmails(updated);
+    await sendRentalCompletedEmails(enrichedUpdated || updated);
   }
 
   const statusMessages = {
@@ -332,7 +369,7 @@ export async function updateBookingStatusByOwner(req, res) {
     cancelled: `Your rental of "${updated.equipmentName}" has been cancelled by the owner.`,
   };
 
-  const customerEmail = updated.customer?.email || "";
+  const customerEmail = (enrichedUpdated || updated).customer?.email || "";
   if (customerEmail && statusMessages[bookingStatus]) {
     await createNotification(
       db,
@@ -341,9 +378,9 @@ export async function updateBookingStatusByOwner(req, res) {
       "Rental status updated",
       statusMessages[bookingStatus],
       "/dashboard/customer/my-rentals",
-      { bookingId: updated._id.toString(), bookingStatus },
+      { bookingId: (enrichedUpdated || updated)._id.toString(), bookingStatus },
     );
   }
 
-  return res.status(200).json({ success: true, data: serializeBooking(updated) });
+  return res.status(200).json({ success: true, data: serializeBooking(enrichedUpdated || updated) });
 }
