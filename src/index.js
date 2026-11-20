@@ -13,13 +13,12 @@ async function start() {
     console.log("[db] MongoDB connected");
   } catch (error) {
     console.error(`[db] MongoDB connection failed: ${error.message}`);
-    process.exit(1); // DB ছাড়া server চালানোর মানে নেই
+    process.exit(1);
   }
 
   try {
     await ensureIndexes(db);
   } catch {
-    // index failures are non-fatal; keep server running silently
   }
 
   const server = app.listen(env.port, () => {

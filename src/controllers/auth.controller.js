@@ -24,7 +24,6 @@ export async function loginWithJwt(req, res) {
   const users = db.collection("users");
   const now = new Date();
 
-  // Accept "customer" and "owner" ONLY. If missing, invalid, or "admin", default to "customer".
   const normalizedRole = typeof role === "string" ? role.trim().toLowerCase() : "";
   const assignedRole = normalizedRole === "owner" ? "owner" : "customer";
 

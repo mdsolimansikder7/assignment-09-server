@@ -181,10 +181,6 @@ export async function getEquipmentById(req, res) {
   const isOwner = role === "owner" && item.owner?.email === req.user?.email;
   const isAdmin = role === "admin";
 
-  // Visibility:
-  // - customer: approved equipment only
-  // - owner: approved equipment + their own equipment (any status)
-  // - admin: everything
   const isVisible = isAdmin || isApproved || isOwner;
 
   if (!isVisible) {

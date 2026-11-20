@@ -119,7 +119,6 @@ async function completePayment(session, stripe = getStripe()) {
     { upsert: true },
   );
 
-  // Create notifications
   await createNotification(
     db,
     booking.customer?.email || "",
